@@ -1,0 +1,36 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════
+#  LOCAL DEVELOPMENT STACK — lightweight, no HA cluster
+#  Just Redis + PostgreSQL — gateway runs directly on your machine
+#  Use: docker compose -f docker-compose.local.yml up -d
+# ══════════════════════════════════════════════════════════════
+
+services:
+
+  # Redis — rate limiting + policy cache
+  redis:
+    image: redis:7-alpine
+    container_name: pii-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass redis_secret
+    volumes:
+      - redis_local:/data
+
+  # PostgreSQL — audit trail
+  postgres:
+    image: postgres:15-alpine
+    container_name: pii-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB:       pii_audit
+      POSTGRES_USER:     pii_user
+      POSTGRES_PASSWORD: pii_pass
+    volumes:
+      - postgres_local:/var/lib/postgresql/data
+
+volumes:
+  redis_local:
+  postgres_local:

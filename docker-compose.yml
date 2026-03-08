@@ -1,0 +1,122 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════
+#  Enterprise PII Gateway v3.0 — Full Stack
+#  Supports all 4 TLS modes (set TLS_MODE env var)
+# ══════════════════════════════════════════════════════════════
+
+services:
+
+  # ── PII Gateway (3 nodes for HA) ──────────────────────────────
+  gateway-1:
+    build: .
+    container_name: pii-gateway-1
+    restart: always
+    environment:
+      - REDIS_URL=redis://:redis_secret@redis:6379/0
+      - DATABASE_URL=postgresql://pii_user:pii_pass@postgres:5432/pii_audit
+      - TLS_MODE=${TLS_MODE:-corp_ca}
+      - CORP_CA_BUNDLE=/certs/corp_ca_bundle.crt
+      - MTLS_CERT=/certs/gateway.crt
+      - MTLS_KEY=/certs/gateway.key
+      - MTLS_CLIENT_CA=/certs/sidecar-ca.crt
+    depends_on: [redis, postgres]
+    volumes:
+      - ./certs:/certs:ro              # All certs — read only
+      - gateway_logs:/var/log/pii-gateway
+    networks: [pii-net]
+
+  gateway-2:
+    build: .
+    container_name: pii-gateway-2
+    restart: always
+    environment:
+      - REDIS_URL=redis://:redis_secret@redis:6379/0
+      - DATABASE_URL=postgresql://pii_user:pii_pass@postgres:5432/pii_audit
+      - TLS_MODE=${TLS_MODE:-corp_ca}
+      - CORP_CA_BUNDLE=/certs/corp_ca_bundle.crt
+    depends_on: [redis, postgres]
+    volumes:
+      - ./certs:/certs:ro
+      - gateway_logs:/var/log/pii-gateway
+    networks: [pii-net]
+
+  gateway-3:
+    build: .
+    container_name: pii-gateway-3
+    restart: always
+    environment:
+      - REDIS_URL=redis://:redis_secret@redis:6379/0
+      - DATABASE_URL=postgresql://pii_user:pii_pass@postgres:5432/pii_audit
+      - TLS_MODE=${TLS_MODE:-corp_ca}
+      - CORP_CA_BUNDLE=/certs/corp_ca_bundle.crt
+    depends_on: [redis, postgres]
+    volumes:
+      - ./certs:/certs:ro
+      - gateway_logs:/var/log/pii-gateway
+    networks: [pii-net]
+
+  # ── NGINX Load Balancer ───────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: pii-lb
+    restart: always
+    ports:
+      - "443:443"      # DNS interception mode (all apps + Copilot)
+      - "8443:8443"    # Corp CA mode (explicit proxy)
+      - "7778:7778"    # Sidecar HTTP mode (internal only)
+      - "8444:8444"    # DNS mode — Anthropic cert
+      - "8445:8445"    # DNS mode — OpenAI cert
+      - "8446:8446"    # DNS mode — GitHub Copilot cert
+      - "9090:9090"    # Metrics + health (internal)
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro    # All domain certs
+    depends_on: [gateway-1, gateway-2, gateway-3]
+    networks: [pii-net]
+
+  # ── Redis (rate limiting + policy cache) ─────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pii-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass redis_secret
+    volumes:
+      - redis_data:/data
+    networks: [pii-net]
+
+  # ── PostgreSQL (audit trail) ──────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: pii-postgres
+    restart: always
+    environment:
+      POSTGRES_DB:       pii_audit
+      POSTGRES_USER:     pii_user
+      POSTGRES_PASSWORD: pii_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [pii-net]
+
+  # ── Grafana Dashboard ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: pii-grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin_secret
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [pii-net]
+
+volumes:
+  redis_data:
+  postgres_data:
+  grafana_data:
+  gateway_logs:
+
+networks:
+  pii-net:
+    driver: bridge

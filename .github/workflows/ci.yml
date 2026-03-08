@@ -1,0 +1,126 @@
+name: CI — PII Gateway
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── Unit Tests ─────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        options: --health-cmd "redis-cli ping" --health-interval 10s
+        ports: ["6379:6379"]
+
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: pii_audit
+          POSTGRES_USER: pii_user
+          POSTGRES_PASSWORD: pii_pass
+        options: --health-cmd pg_isready --health-interval 10s
+        ports: ["5432:5432"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_lg
+
+      - name: Run unit tests (no gateway needed)
+        run: |
+          cd src
+          pytest ../tests/test_pii_engine.py -v --tb=short
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          DATABASE_URL: postgresql://pii_user:pii_pass@localhost:5432/pii_audit
+          TLS_MODE: corp_ca
+          CORP_CA_BUNDLE: ./certs/corp_ca_bundle.crt
+
+      - name: Run integration tests
+        run: |
+          # Start gateway in background
+          cd src && python gateway.py &
+          sleep 5
+          # Run integration tests
+          pytest ../tests/test_gateway.py -v -m integration --tb=short
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          DATABASE_URL: postgresql://pii_user:pii_pass@localhost:5432/pii_audit
+          TLS_MODE: corp_ca
+          CORP_CA_BUNDLE: ./certs/corp_ca_bundle.crt
+
+      - name: Coverage report
+        run: |
+          cd src
+          pytest ../tests/ -v --cov=. --cov-report=xml --cov-report=term
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          DATABASE_URL: postgresql://pii_user:pii_pass@localhost:5432/pii_audit
+          TLS_MODE: corp_ca
+          CORP_CA_BUNDLE: ./certs/corp_ca_bundle.crt
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  # ── Docker Build ────────────────────────────────────────────
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t pii-gateway:${{ github.sha }} .
+
+      - name: Test Docker image health
+        run: |
+          docker run -d --name test-gateway \
+            -e REDIS_URL=redis://localhost:6379/0 \
+            -e TLS_MODE=scrub_api \
+            -p 8080:8080 \
+            pii-gateway:${{ github.sha }}
+          sleep 10
+          curl -f http://localhost:8080/health || exit 1
+          docker stop test-gateway
+
+  # ── Security Scan ───────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Bandit (Python security linter)
+        run: |
+          pip install bandit
+          bandit -r src/ -ll -ii
+
+      - name: Check for secrets in code
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD

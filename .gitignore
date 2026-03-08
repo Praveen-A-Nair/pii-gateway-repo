@@ -1,0 +1,52 @@
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.env.local
+.env.*.local
+
+# ── Secrets & Credentials (NEVER commit these) ────────────────
+.env
+*.key
+*.pem
+*.p12
+*.pfx
+certs/
+!certs/.gitkeep
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+audit.jsonl
+gateway.log
+pii_proxy.log
+
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────
+.docker/
+
+# ── Test & Coverage ───────────────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── OS ────────────────────────────────────────────────────────
+*.tmp
+*.bak
