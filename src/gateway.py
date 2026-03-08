@@ -23,7 +23,6 @@ import asyncio
 import httpx
 import redis.asyncio as redis
 from datetime import datetime, timezone
-from pathlib import Path
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -35,27 +34,35 @@ from config import Settings
 
 # ── Config ──────────────────────────────────────────────────────
 settings = Settings()
-
-# Setup logging with proper file handling (works on Windows & Linux)
-log_file = Path(__file__).parent.parent / "gateway.log"
-log_file.parent.mkdir(parents=True, exist_ok=True)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     handlers=[
-        logging.FileHandler(str(log_file)),
+        logging.FileHandler("/var/log/pii-gateway/gateway.log"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger("pii-gateway")
 
 # ── LLM Route Map ───────────────────────────────────────────────
+# Add any new LLM domains here — used in DNS mode and proxy routing
 LLM_ROUTES = {
-    "api.anthropic.com":              "https://api.anthropic.com",
-    "api.openai.com":                 "https://api.openai.com",
-    "generativelanguage.googleapis.com": "https://generativelanguage.googleapis.com",
-    "api.cohere.ai":                  "https://api.cohere.ai",
+    # Anthropic / Claude
+    "api.anthropic.com":                    "https://api.anthropic.com",
+    # OpenAI / ChatGPT
+    "api.openai.com":                       "https://api.openai.com",
+    # Google Gemini
+    "generativelanguage.googleapis.com":    "https://generativelanguage.googleapis.com",
+    # Cohere
+    "api.cohere.ai":                        "https://api.cohere.ai",
+    # ── GitHub Copilot (VS Code Chat) ────────────────────────────
+    # Copilot Chat uses ALL of these — all must be listed
+    "api.githubcopilot.com":                "https://api.githubcopilot.com",
+    "copilot-proxy.githubusercontent.com":  "https://copilot-proxy.githubusercontent.com",
+    "origin-tracker.githubusercontent.com": "https://origin-tracker.githubusercontent.com",
+    "default.exp-tas.com":                  "https://default.exp-tas.com",
+    # Azure OpenAI (used by Copilot Business/Enterprise internally)
+    "eastus.api.cognitive.microsoft.com":   "https://eastus.api.cognitive.microsoft.com",
 }
 
 # ── Startup / Shutdown ──────────────────────────────────────────
