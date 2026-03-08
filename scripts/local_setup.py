@@ -13,8 +13,17 @@ import platform
 import httpx
 from pathlib import Path
 
+# Fix Unicode output on Windows
+if platform.system() == "Windows":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# Add src to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 IS_WINDOWS = platform.system() == "Windows"
-PROJECT_DIR = Path(__file__).parent
+PROJECT_DIR = Path(__file__).parent.parent  # Go up from scripts/ to project root
 
 
 # ── Colour output ────────────────────────────────────────────────
@@ -107,7 +116,7 @@ def install():
 
     # Generate local dev certs
     print("\n  Generating local development certificates...")
-    result = run("python cert_manager.py generate", check=False)
+    result = run(f"python {PROJECT_DIR}/scripts/cert_manager.py generate", check=False)
     if result.returncode == 0:
         print(green("  ✓ Certificates generated in ./certs/"))
     else:
@@ -138,7 +147,7 @@ def start():
 
     # Start Redis + PostgreSQL only (not full cluster)
     print("  Starting Redis and PostgreSQL via Docker...")
-    run("""podman-compose -f ../docker-compose.local.yml up -d""")
+    run(f"podman-compose -f {PROJECT_DIR}/docker-compose.local.yml up -d")
 
     print("  Waiting for services to be ready...")
     time.sleep(5)
@@ -165,14 +174,16 @@ def start():
     print("\n  Starting PII Gateway on http://localhost:8080 ...")
     if IS_WINDOWS:
         subprocess.Popen(
-            [sys.executable, "gateway.py"],
-            creationflags=subprocess.CREATE_NEW_CONSOLE
+            [sys.executable, f"{PROJECT_DIR}/src/gateway.py"],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+            cwd=str(PROJECT_DIR)
         )
     else:
         subprocess.Popen(
-            [sys.executable, "gateway.py"],
-            stdout=open("gateway.log", "w"),
-            stderr=subprocess.STDOUT
+            [sys.executable, f"{PROJECT_DIR}/src/gateway.py"],
+            stdout=open(f"{PROJECT_DIR}/gateway.log", "w"),
+            stderr=subprocess.STDOUT,
+            cwd=str(PROJECT_DIR)
         )
 
     print("  Waiting for gateway to start...")
@@ -399,7 +410,7 @@ def test():
 # ════════════════════════════════════════════════════════════════
 def stop():
     section("🛑 Stopping Local Stack")
-    run("podman-compose -f ../docker-compose.local.yml down", check=False)
+    run(f"podman-compose -f {PROJECT_DIR}/docker-compose.local.yml down", check=False)
     if IS_WINDOWS:
         run("taskkill /f /im python.exe", check=False)
     else:

@@ -23,6 +23,7 @@ import asyncio
 import httpx
 import redis.asyncio as redis
 from datetime import datetime, timezone
+from pathlib import Path
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,11 +35,16 @@ from config import Settings
 
 # ── Config ──────────────────────────────────────────────────────
 settings = Settings()
+
+# Setup logging with proper file handling (works on Windows & Linux)
+log_file = Path(__file__).parent.parent / "gateway.log"
+log_file.parent.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     handlers=[
-        logging.FileHandler("/var/log/pii-gateway/gateway.log"),
+        logging.FileHandler(str(log_file)),
         logging.StreamHandler()
     ]
 )

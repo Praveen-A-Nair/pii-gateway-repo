@@ -6,6 +6,7 @@ All PII scrubbing events stored for compliance
 import json
 import logging
 import asyncpg
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("audit-db")
@@ -71,5 +72,6 @@ class AuditDatabase:
                 logger.error(f"DB write failed, using file fallback: {e}")
 
         # File fallback (if DB unavailable)
-        with open("/var/log/pii-gateway/audit.jsonl", "a") as f:
+        audit_log = Path(__file__).parent.parent / "audit.log"
+        with open(str(audit_log), "a") as f:
             f.write(json.dumps(entry) + "\n")

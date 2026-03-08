@@ -3,6 +3,12 @@ Test script — validate PII scrubbing works correctly
 Run: python test_pii.py
 """
 
+import sys
+from pathlib import Path
+
+# Add src to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 from pii_scrubber import PIIScrubber
 
 scrubber = PIIScrubber()
