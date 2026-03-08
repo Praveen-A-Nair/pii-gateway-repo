@@ -26,3 +26,4 @@ spacy>=3.7.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-cov>=5.0.0
+podman-compose>=1.0.6        # Podman Compose for local dev

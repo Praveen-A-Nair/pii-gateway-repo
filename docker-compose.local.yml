@@ -1,16 +1,16 @@
-version: "3.9"
-
 # ══════════════════════════════════════════════════════════════
-#  LOCAL DEVELOPMENT STACK — lightweight, no HA cluster
+#  LOCAL DEVELOPMENT STACK — Podman Compose
 #  Just Redis + PostgreSQL — gateway runs directly on your machine
-#  Use: docker compose -f docker-compose.local.yml up -d
+#  Run: podman-compose -f docker-compose.local.yml up -d
 # ══════════════════════════════════════════════════════════════
+
+version: "3.9"
 
 services:
 
   # Redis — rate limiting + policy cache
   redis:
-    image: redis:7-alpine
+    image: docker.io/redis:7-alpine
     container_name: pii-redis
     ports:
       - "6379:6379"
@@ -20,7 +20,7 @@ services:
 
   # PostgreSQL — audit trail
   postgres:
-    image: postgres:15-alpine
+    image: docker.io/postgres:15-alpine
     container_name: pii-postgres
     ports:
       - "5432:5432"

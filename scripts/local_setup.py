@@ -57,19 +57,27 @@ def install():
     print(green(f"  ✓ Python {major}.{minor} OK"))
 
     # Check Docker
-    result = run("docker --version", check=False, capture=True)
+    result = run("podman --version", check=False, capture=True)
     if result.returncode != 0:
-        print(red("  ✗ Docker not found — install Docker Desktop first"))
-        print("    https://www.docker.com/products/docker-desktop")
+        print(red("  ✗ Podman not found — install Podman first"))
+        print("    https://podman.io/getting-started/installation")
         sys.exit(1)
-    print(green(f"  ✓ Docker found"))
+    print(green(f"  ✓ Podman found"))
+
+    # Check podman-compose
+    result = run("podman-compose version", check=False, capture=True)
+    if result.returncode != 0:
+        print(red("  ✗ Podman not found — install Podman first"))
+        print("    https://podman.io/getting-started/installation")
+        sys.exit(1)
+    print(green(f"  ✓ Podman found"))
 
     # Check Docker Compose
-    result = run("docker compose version", check=False, capture=True)
+    result = run("podman-compose version", check=False, capture=True)
     if result.returncode != 0:
-        print(red("  ✗ Docker Compose not found"))
+        print(red("  ✗ podman-compose not found — run: pip install podman-compose"))
         sys.exit(1)
-    print(green("  ✓ Docker Compose found"))
+    print(green("  ✓ podman-compose found"))
 
     # Install Python packages
     print("\n  Installing Python packages...")
@@ -130,13 +138,13 @@ def start():
 
     # Start Redis + PostgreSQL only (not full cluster)
     print("  Starting Redis and PostgreSQL via Docker...")
-    run("""docker compose up -d redis postgres""")
+    run("""podman-compose -f ../docker-compose.local.yml up -d""")
 
     print("  Waiting for services to be ready...")
     time.sleep(5)
 
     # Verify Redis
-    result = run("docker exec pii-redis redis-cli -a redis_secret ping",
+    result = run("podman exec pii-redis redis-cli -a redis_secret ping",
                  check=False, capture=True)
     if "PONG" in result.stdout:
         print(green("  ✓ Redis ready"))
@@ -145,7 +153,7 @@ def start():
 
     # Verify PostgreSQL
     result = run(
-        'docker exec pii-postgres psql -U pii_user -d pii_audit -c "SELECT 1"',
+        'podman exec pii-postgres psql -U pii_user -d pii_audit -c "SELECT 1"',
         check=False, capture=True
     )
     if "1" in result.stdout:
@@ -391,7 +399,7 @@ def test():
 # ════════════════════════════════════════════════════════════════
 def stop():
     section("🛑 Stopping Local Stack")
-    run("docker compose down", check=False)
+    run("podman-compose -f ../docker-compose.local.yml down", check=False)
     if IS_WINDOWS:
         run("taskkill /f /im python.exe", check=False)
     else:
