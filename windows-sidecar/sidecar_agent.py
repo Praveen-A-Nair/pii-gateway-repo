@@ -93,6 +93,7 @@ SCRUB_HOSTS = {
     "generativelanguage.googleapis.com",
     "api.cohere.ai",
     "api.githubcopilot.com",
+    "api.individual.githubcopilot.com",
     "copilot-proxy.githubusercontent.com",
     "copilot-telemetry.githubusercontent.com",
 }
@@ -180,7 +181,7 @@ def generate_cert():
         logger.info("✅ mitmproxy cert already exists")
         return True
 
-    logger.info("Generating mitmproxy CA cert (takes ~5-10 seconds)...")
+    logger.info("Generating mitmproxy CA cert (takes ~3 seconds)...")
     try:
         # Run mitmdump with a short timeout — it will generate certs then we kill it
         proc = subprocess.Popen(
@@ -190,9 +191,9 @@ def generate_cert():
             stderr=subprocess.PIPE,
         )
         import time
-        time.sleep(6)   # give it time to generate cert
+        time.sleep(4)   # give it time to generate cert
         proc.terminate()
-        proc.wait(timeout=10)
+        proc.wait(timeout=3)
     except Exception as e:
         logger.debug(f"Expected termination: {e}")
 

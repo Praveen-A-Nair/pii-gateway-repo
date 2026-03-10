@@ -2,10 +2,10 @@
 Audit Database — PostgreSQL audit trail
 All PII scrubbing events stored for compliance
 """
-
 import json
 import logging
 import asyncpg
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -53,6 +53,14 @@ class AuditDatabase:
         """Write audit entry — DB with file fallback"""
         if self.pool:
             try:
+                # Fix: convert timestamp string to datetime object
+                timestamp = entry["timestamp"]
+                if isinstance(timestamp, str):
+                    timestamp = datetime.fromisoformat(timestamp)
+                # Ensure timezone aware
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+
                 async with self.pool.acquire() as conn:
                     await conn.execute("""
                         INSERT INTO pii_audit
@@ -61,7 +69,7 @@ class AuditDatabase:
                          original_len, scrubbed_len)
                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
                     """,
-                        entry["request_id"], entry["timestamp"],
+                        entry["request_id"], timestamp,
                         entry["user_id"],    entry["department"],
                         entry["client_ip"],  entry["target_llm"],
                         entry["pii_types"],  json.dumps(entry["pii_counts"]),
