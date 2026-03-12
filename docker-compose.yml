@@ -1,9 +1,11 @@
-version: "3.9"
-
 # ══════════════════════════════════════════════════════════════
 #  Enterprise PII Gateway v3.0 — Full Stack
-#  Supports all 4 TLS modes (set TLS_MODE env var)
+#  Podman Compose compatible
+#  Run: podman-compose up -d
+#       TLS_MODE=corp_ca podman-compose up -d
 # ══════════════════════════════════════════════════════════════
+
+version: "3.9"
 
 services:
 
@@ -12,6 +14,9 @@ services:
     build: .
     container_name: pii-gateway-1
     restart: always
+    userns_mode: keep-id          # Podman: preserve host UID mapping
+    security_opt:
+      - label=disable             # Podman: disable SELinux labelling for volumes
     environment:
       - REDIS_URL=redis://:redis_secret@redis:6379/0
       - DATABASE_URL=postgresql://pii_user:pii_pass@postgres:5432/pii_audit
@@ -22,7 +27,7 @@ services:
       - MTLS_CLIENT_CA=/certs/sidecar-ca.crt
     depends_on: [redis, postgres]
     volumes:
-      - ./certs:/certs:ro              # All certs — read only
+      - ./certs:/certs:ro,z       # :z = shared SELinux label (Podman)
       - gateway_logs:/var/log/pii-gateway
     networks: [pii-net]
 
@@ -30,6 +35,9 @@ services:
     build: .
     container_name: pii-gateway-2
     restart: always
+    userns_mode: keep-id
+    security_opt:
+      - label=disable
     environment:
       - REDIS_URL=redis://:redis_secret@redis:6379/0
       - DATABASE_URL=postgresql://pii_user:pii_pass@postgres:5432/pii_audit
@@ -37,7 +45,7 @@ services:
       - CORP_CA_BUNDLE=/certs/corp_ca_bundle.crt
     depends_on: [redis, postgres]
     volumes:
-      - ./certs:/certs:ro
+      - ./certs:/certs:ro,z
       - gateway_logs:/var/log/pii-gateway
     networks: [pii-net]
 
@@ -45,6 +53,9 @@ services:
     build: .
     container_name: pii-gateway-3
     restart: always
+    userns_mode: keep-id
+    security_opt:
+      - label=disable
     environment:
       - REDIS_URL=redis://:redis_secret@redis:6379/0
       - DATABASE_URL=postgresql://pii_user:pii_pass@postgres:5432/pii_audit
@@ -52,15 +63,17 @@ services:
       - CORP_CA_BUNDLE=/certs/corp_ca_bundle.crt
     depends_on: [redis, postgres]
     volumes:
-      - ./certs:/certs:ro
+      - ./certs:/certs:ro,z
       - gateway_logs:/var/log/pii-gateway
     networks: [pii-net]
 
   # ── NGINX Load Balancer ───────────────────────────────────────
   nginx:
-    image: nginx:alpine
+    image: docker.io/nginx:alpine   # Podman: use full registry path
     container_name: pii-lb
     restart: always
+    security_opt:
+      - label=disable
     ports:
       - "443:443"      # DNS interception mode (all apps + Copilot)
       - "8443:8443"    # Corp CA mode (explicit proxy)
@@ -70,14 +83,14 @@ services:
       - "8446:8446"    # DNS mode — GitHub Copilot cert
       - "9090:9090"    # Metrics + health (internal)
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certs:/etc/nginx/certs:ro    # All domain certs
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro,z
+      - ./certs:/etc/nginx/certs:ro,z
     depends_on: [gateway-1, gateway-2, gateway-3]
     networks: [pii-net]
 
   # ── Redis (rate limiting + policy cache) ─────────────────────
   redis:
-    image: redis:7-alpine
+    image: docker.io/redis:7-alpine
     container_name: pii-redis
     restart: always
     command: redis-server --appendonly yes --requirepass redis_secret
@@ -87,7 +100,7 @@ services:
 
   # ── PostgreSQL (audit trail) ──────────────────────────────────
   postgres:
-    image: postgres:15-alpine
+    image: docker.io/postgres:15-alpine
     container_name: pii-postgres
     restart: always
     environment:
@@ -100,7 +113,7 @@ services:
 
   # ── Grafana Dashboard ─────────────────────────────────────────
   grafana:
-    image: grafana/grafana:latest
+    image: docker.io/grafana/grafana:latest
     container_name: pii-grafana
     restart: always
     ports:

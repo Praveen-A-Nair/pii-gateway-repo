@@ -1,5 +1,26 @@
 """
-PII Sidecar Agent v4.1 — mitmproxy based
+PII Sidecar Agent v4.1 — mitmproxy based (macOS)
+=================================================
+Uses mitmproxy to intercept HTTPS traffic and scrub PII.
+
+Install:
+    pip3 install mitmproxy
+    python3 sidecar_agent.py
+
+VS Code settings.json:
+    {
+      "http.proxy": "http://localhost:7777",
+      "http.proxyStrictSSL": false,
+      "http.proxySupport": "override",
+      "github.copilot.advanced": {
+        "debug.overrideProxyUrl": "http://localhost:7777",
+        "debug.testOverrideProxyUrl": "http://localhost:7777"
+      }
+    }
+
+Auto-start on Mac login:
+    cp com.company.piisidecar.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.company.piisidecar.plist
 """
 
 import os
@@ -10,12 +31,19 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-GATEWAY_SCRUB_URL = os.getenv("PII_GATEWAY_URL",   "http://localhost:8080/scrub")
-LISTEN_PORT       = int(os.getenv("SIDECAR_PORT",  "7777"))
-FAIL_CLOSED       = os.getenv("SIDECAR_FAIL_CLOSED", "true").lower() == "true"
+# ── Config ───────────────────────────────────────────────────────
+GATEWAY_SCRUB_URL = os.getenv("PII_GATEWAY_URL",    "http://localhost:8080/scrub")
+LISTEN_PORT       = int(os.getenv("SIDECAR_PORT",   "7777"))
+FAIL_CLOSED       = os.getenv("SIDECAR_FAIL_CLOSED","true").lower() == "true"
 
-log_dir = Path(os.getenv("PROGRAMDATA", ".")) / "PIISidecar"
-log_dir.mkdir(parents=True, exist_ok=True)
+# ── Log directory (macOS) ────────────────────────────────────────
+log_dir = Path("/var/log/piisidecar")
+try:
+    log_dir.mkdir(parents=True, exist_ok=True)
+except PermissionError:
+    # Fallback to user home if /var/log not writable
+    log_dir = Path.home() / "Library" / "Logs" / "PIISidecar"
+    log_dir.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,54 +57,59 @@ logger = logging.getLogger("sidecar")
 
 
 def get_username():
-    return os.environ.get("USERNAME", "unknown")
+    return os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
 
 
 def get_department():
-    try:
-        import winreg
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Company\PIIProxy")
-        dept, _ = winreg.QueryValueEx(key, "Department")
-        winreg.CloseKey(key)
+    """Read department from a config file or env var."""
+    dept = os.environ.get("PII_DEPARTMENT")
+    if dept:
         return dept
-    except Exception:
-        return "ENGINEERING"
+    config_file = Path("/etc/piisidecar/department")
+    if config_file.exists():
+        return config_file.read_text().strip()
+    return "ENGINEERING"
 
 
-def trust_mitmproxy_cert():
-    """Install mitmproxy CA into Windows trusted root — needs to run once."""
-    # mitmproxy stores certs in ~/.mitmproxy/
+def trust_mitmproxy_cert_mac():
+    """
+    Install mitmproxy CA cert into macOS System Keychain.
+    Requires sudo — run once.
+    """
     mitm_dir  = Path.home() / ".mitmproxy"
-    # .cer is DER format — what certutil needs
-    cert_cer  = mitm_dir / "mitmproxy-ca-cert.cer"
     cert_pem  = mitm_dir / "mitmproxy-ca-cert.pem"
-
-    cert_path = cert_cer if cert_cer.exists() else cert_pem if cert_pem.exists() else None
+    cert_cer  = mitm_dir / "mitmproxy-ca-cert.cer"
+    cert_path = cert_pem if cert_pem.exists() else cert_cer if cert_cer.exists() else None
 
     if not cert_path:
-        logger.warning(f"No cert found in {mitm_dir}")
+        logger.warning(f"No mitmproxy cert found in {mitm_dir}")
         return False
 
-    logger.info(f"Installing cert from {cert_path} into Windows trusted root...")
+    logger.info(f"Installing cert from {cert_path} into macOS System Keychain...")
     try:
         result = subprocess.run(
-            ["certutil", "-addstore", "-user", "Root", str(cert_path)],
+            [
+                "sudo", "security", "add-trusted-cert",
+                "-d", "-r", "trustRoot",
+                "-k", "/Library/Keychains/System.keychain",
+                str(cert_path)
+            ],
             capture_output=True, text=True
         )
         if result.returncode == 0:
-            logger.info("✅ mitmproxy CA cert trusted in Windows")
+            logger.info("✅ mitmproxy CA cert trusted in macOS System Keychain")
             return True
         else:
-            logger.warning(f"certutil: {result.stdout.strip()} {result.stderr.strip()}")
-            logger.warning("Try running PowerShell as Administrator and re-run this script")
+            logger.warning(f"security command output: {result.stdout} {result.stderr}")
+            logger.warning("Try running manually:")
+            logger.warning(f"  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain {cert_path}")
             return False
     except FileNotFoundError:
-        logger.error("certutil not found — run this in PowerShell as Administrator:")
-        logger.error(f'  certutil -addstore -user Root "{cert_path}"')
+        logger.error("security command not found — are you on macOS?")
         return False
 
 
-# ── mitmproxy addon script ───────────────────────────────────────
+# ── mitmproxy addon ──────────────────────────────────────────────
 ADDON_CODE = r'''
 import json
 import logging
@@ -103,18 +136,18 @@ logger = logging.getLogger("pii-addon")
 
 
 def get_username():
-    return os.environ.get("USERNAME", "unknown")
+    return os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
 
 
 def get_department():
-    try:
-        import winreg
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Company\PIIProxy")
-        dept, _ = winreg.QueryValueEx(key, "Department")
-        winreg.CloseKey(key)
+    dept = os.environ.get("PII_DEPARTMENT")
+    if dept:
         return dept
-    except Exception:
-        return "ENGINEERING"
+    from pathlib import Path
+    config_file = Path("/etc/piisidecar/department")
+    if config_file.exists():
+        return config_file.read_text().strip()
+    return "ENGINEERING"
 
 
 def scrub(body: str):
@@ -125,7 +158,7 @@ def scrub(body: str):
             "Content-Type":  "application/json",
             "X-User-ID":     get_username(),
             "X-Department":  get_department(),
-            "X-Client-Mode": "mitmproxy-v4",
+            "X-Client-Mode": "mitmproxy-mac-v4",
         },
         method="POST"
     )
@@ -175,23 +208,21 @@ addon_path.write_text(ADDON_CODE, encoding="utf-8")
 
 
 def generate_cert():
-    """Run mitmdump briefly just to generate the CA cert files."""
-    mitm_cert = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.cer"
+    """Run mitmdump briefly to generate CA cert."""
+    mitm_cert = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.pem"
     if mitm_cert.exists():
         logger.info("✅ mitmproxy cert already exists")
         return True
 
-    logger.info("Generating mitmproxy CA cert (takes ~3 seconds)...")
+    logger.info("Generating mitmproxy CA cert...")
     try:
-        # Run mitmdump with a short timeout — it will generate certs then we kill it
+        import time
         proc = subprocess.Popen(
-            ["mitmdump", "--listen-port", "17777",   # use different port to avoid conflict
-             "--quiet"],
+            ["mitmdump", "--listen-port", "17777", "--quiet"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        import time
-        time.sleep(4)   # give it time to generate cert
+        time.sleep(4)
         proc.terminate()
         proc.wait(timeout=3)
     except Exception as e:
@@ -201,19 +232,20 @@ def generate_cert():
         logger.info("✅ mitmproxy CA cert generated")
         return True
     else:
-        logger.warning(f"Cert not found at {mitm_cert} — may need to run mitmdump manually")
+        logger.warning("Cert not generated — try running mitmdump manually once")
         return False
 
 
 def main():
     print("\n" + "="*60)
-    print("  🛡️  PII SIDECAR AGENT v4.1 (mitmproxy)")
+    print("  🛡️  PII SIDECAR AGENT v4.1 (mitmproxy) — macOS")
     print("="*60)
     print(f"  Proxy:       http://localhost:{LISTEN_PORT}")
     print(f"  Gateway:     {GATEWAY_SCRUB_URL}")
     print(f"  Fail-closed: {FAIL_CLOSED}")
     print(f"  User:        {get_username()}")
     print(f"  Department:  {get_department()}")
+    print(f"  Log dir:     {log_dir}")
     print("="*60)
 
     # Check mitmproxy installed
@@ -227,35 +259,32 @@ def main():
         logger.info(f"✅ mitmproxy {v} found")
     except ImportError:
         print("\n  ❌ mitmproxy not installed. Run:")
-        print("     pip install mitmproxy")
+        print("     pip3 install mitmproxy")
         sys.exit(1)
 
     # Check gateway
     try:
-        urllib.request.urlopen("http://localhost:8080/health", timeout=3)
+        urllib.request.urlopen(f"http://localhost:8080/health", timeout=3)
         logger.info("✅ Gateway reachable at http://localhost:8080")
     except Exception:
-        logger.warning("⚠️  Gateway not reachable — start it: cd src && python gateway.py")
+        logger.warning("⚠️  Gateway not reachable — start it: cd src && python3 gateway.py")
 
     # Generate cert if needed
-    mitm_cert_cer = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.cer"
     mitm_cert_pem = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.pem"
-
-    if not mitm_cert_cer.exists() and not mitm_cert_pem.exists():
+    if not mitm_cert_pem.exists():
         generate_cert()
     else:
         logger.info("✅ mitmproxy cert already generated")
 
-    # Trust cert in Windows
-    trust_mitmproxy_cert()
+    # Trust cert in macOS
+    trust_mitmproxy_cert_mac()
 
     print(f"\n  🚀 Starting proxy on http://localhost:{LISTEN_PORT}")
     print("  Press Ctrl+C to stop\n")
-    print("  VS Code settings.json should have:")
+    print("  Add to VS Code settings.json:")
     print('  "http.proxy": "http://localhost:7777"')
     print('  "http.proxyStrictSSL": false\n')
 
-    # Launch mitmdump — this replaces the current process
     cmd = [
         "mitmdump",
         "--listen-host", "127.0.0.1",

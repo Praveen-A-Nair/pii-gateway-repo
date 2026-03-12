@@ -45,11 +45,24 @@ logging.basicConfig(
 logger = logging.getLogger("pii-gateway")
 
 # ── LLM Route Map ───────────────────────────────────────────────
+# Add any new LLM domains here — used in DNS mode and proxy routing
 LLM_ROUTES = {
-    "api.anthropic.com":              "https://api.anthropic.com",
-    "api.openai.com":                 "https://api.openai.com",
-    "generativelanguage.googleapis.com": "https://generativelanguage.googleapis.com",
-    "api.cohere.ai":                  "https://api.cohere.ai",
+    # Anthropic / Claude
+    "api.anthropic.com":                    "https://api.anthropic.com",
+    # OpenAI / ChatGPT
+    "api.openai.com":                       "https://api.openai.com",
+    # Google Gemini
+    "generativelanguage.googleapis.com":    "https://generativelanguage.googleapis.com",
+    # Cohere
+    "api.cohere.ai":                        "https://api.cohere.ai",
+    # ── GitHub Copilot (VS Code Chat) ────────────────────────────
+    # Copilot Chat uses ALL of these — all must be listed
+    "api.githubcopilot.com":                "https://api.githubcopilot.com",
+    "copilot-proxy.githubusercontent.com":  "https://copilot-proxy.githubusercontent.com",
+    "origin-tracker.githubusercontent.com": "https://origin-tracker.githubusercontent.com",
+    "default.exp-tas.com":                  "https://default.exp-tas.com",
+    # Azure OpenAI (used by Copilot Business/Enterprise internally)
+    "eastus.api.cognitive.microsoft.com":   "https://eastus.api.cognitive.microsoft.com",
 }
 
 # ── Startup / Shutdown ──────────────────────────────────────────

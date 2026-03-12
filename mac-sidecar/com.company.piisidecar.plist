@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent — auto-starts PII sidecar on login
+  
+  Deploy:
+    cp com.company.piisidecar.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.company.piisidecar.plist
+  
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.company.piisidecar.plist
+  
+  Check status:
+    launchctl list | grep piisidecar
+  
+  View logs:
+    tail -f ~/Library/Logs/PIISidecar/sidecar.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.company.piisidecar</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/opt/company/piisidecar/sidecar_agent.py</string>
+    </array>
+
+    <!-- Auto-start on login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it crashes -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PII_GATEWAY_URL</key>
+        <string>https://pii-gateway.yourcompany.com/scrub</string>
+        <key>SIDECAR_PORT</key>
+        <string>7777</string>
+        <key>SIDECAR_FAIL_CLOSED</key>
+        <string>true</string>
+        <key>PII_DEPARTMENT</key>
+        <string>ENGINEERING</string>
+    </dict>
+
+    <!-- Log stdout and stderr -->
+    <key>StandardOutPath</key>
+    <string>/tmp/piisidecar.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/piisidecar.stderr.log</string>
+
+    <!-- Throttle restart if crashing -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>

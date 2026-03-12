@@ -4,6 +4,7 @@
 > masks sensitive data before it reaches any AI model, and provides a full compliance audit trail.
 
 [![CI](https://github.com/YOUR_ORG/pii-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/pii-gateway/actions)
+![Podman](https://img.shields.io/badge/podman-4.0%2B-purple)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -28,6 +29,7 @@ git clone https://github.com/YOUR_ORG/pii-gateway.git
 cd pii-gateway
 
 # 2. Install + start + test in one command
+pip install podman-compose
 python scripts/local_setup.py all
 ```
 
@@ -91,9 +93,9 @@ pii-gateway/
 ├── certs/                      ← Generated locally (gitignored)
 │   └── .gitkeep
 │
-├── Dockerfile
-├── docker-compose.yml          ← Production HA stack
-├── docker-compose.local.yml    ← Local dev (Redis + PG only)
+├── Podmanfile
+├── podman-compose.yml          ← Production HA stack
+├── podman-compose.local.yml    ← Local dev (Redis + PG only)
 ├── nginx.conf                  ← Load balancer (all 4 TLS modes)
 ├── requirements.txt
 ├── .env.example                ← Copy to .env (never commit .env)
@@ -152,7 +154,7 @@ cp .env.example .env
 # Edit .env with your Redis/DB passwords
 
 # 4. Deploy full HA stack
-TLS_MODE=corp_ca docker compose up -d
+TLS_MODE=corp_ca podman-compose up -d
 
 # 5. Verify
 curl https://pii-gateway.internal:8443/health

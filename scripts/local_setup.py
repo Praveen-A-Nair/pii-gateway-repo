@@ -13,8 +13,17 @@ import platform
 import httpx
 from pathlib import Path
 
+# Fix Unicode output on Windows
+if platform.system() == "Windows":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# Add src to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 IS_WINDOWS = platform.system() == "Windows"
-PROJECT_DIR = Path(__file__).parent
+PROJECT_DIR = Path(__file__).parent.parent  # Go up from scripts/ to project root
 
 
 # ── Colour output ────────────────────────────────────────────────
@@ -57,19 +66,27 @@ def install():
     print(green(f"  ✓ Python {major}.{minor} OK"))
 
     # Check Docker
-    result = run("docker --version", check=False, capture=True)
+    result = run("podman --version", check=False, capture=True)
     if result.returncode != 0:
-        print(red("  ✗ Docker not found — install Docker Desktop first"))
-        print("    https://www.docker.com/products/docker-desktop")
+        print(red("  ✗ Podman not found — install Podman first"))
+        print("    https://podman.io/getting-started/installation")
         sys.exit(1)
-    print(green(f"  ✓ Docker found"))
+    print(green(f"  ✓ Podman found"))
+
+    # Check podman-compose
+    result = run("podman-compose version", check=False, capture=True)
+    if result.returncode != 0:
+        print(red("  ✗ Podman not found — install Podman first"))
+        print("    https://podman.io/getting-started/installation")
+        sys.exit(1)
+    print(green(f"  ✓ Podman found"))
 
     # Check Docker Compose
-    result = run("docker compose version", check=False, capture=True)
+    result = run("podman-compose version", check=False, capture=True)
     if result.returncode != 0:
-        print(red("  ✗ Docker Compose not found"))
+        print(red("  ✗ podman-compose not found — run: pip install podman-compose"))
         sys.exit(1)
-    print(green("  ✓ Docker Compose found"))
+    print(green("  ✓ podman-compose found"))
 
     # Install Python packages
     print("\n  Installing Python packages...")
@@ -99,7 +116,7 @@ def install():
 
     # Generate local dev certs
     print("\n  Generating local development certificates...")
-    result = run("python cert_manager.py generate", check=False)
+    result = run(f"python {PROJECT_DIR}/scripts/cert_manager.py generate", check=False)
     if result.returncode == 0:
         print(green("  ✓ Certificates generated in ./certs/"))
     else:
@@ -130,13 +147,13 @@ def start():
 
     # Start Redis + PostgreSQL only (not full cluster)
     print("  Starting Redis and PostgreSQL via Docker...")
-    run("""docker compose up -d redis postgres""")
+    run(f"podman-compose -f {PROJECT_DIR}/docker-compose.local.yml up -d")
 
     print("  Waiting for services to be ready...")
     time.sleep(5)
 
     # Verify Redis
-    result = run("docker exec pii-redis redis-cli -a redis_secret ping",
+    result = run("podman exec pii-redis redis-cli -a redis_secret ping",
                  check=False, capture=True)
     if "PONG" in result.stdout:
         print(green("  ✓ Redis ready"))
@@ -145,7 +162,7 @@ def start():
 
     # Verify PostgreSQL
     result = run(
-        'docker exec pii-postgres psql -U pii_user -d pii_audit -c "SELECT 1"',
+        'podman exec pii-postgres psql -U pii_user -d pii_audit -c "SELECT 1"',
         check=False, capture=True
     )
     if "1" in result.stdout:
@@ -157,14 +174,16 @@ def start():
     print("\n  Starting PII Gateway on http://localhost:8080 ...")
     if IS_WINDOWS:
         subprocess.Popen(
-            [sys.executable, "gateway.py"],
-            creationflags=subprocess.CREATE_NEW_CONSOLE
+            [sys.executable, f"{PROJECT_DIR}/src/gateway.py"],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+            cwd=str(PROJECT_DIR)
         )
     else:
         subprocess.Popen(
-            [sys.executable, "gateway.py"],
-            stdout=open("gateway.log", "w"),
-            stderr=subprocess.STDOUT
+            [sys.executable, f"{PROJECT_DIR}/src/gateway.py"],
+            stdout=open(f"{PROJECT_DIR}/gateway.log", "w"),
+            stderr=subprocess.STDOUT,
+            cwd=str(PROJECT_DIR)
         )
 
     print("  Waiting for gateway to start...")
@@ -391,7 +410,7 @@ def test():
 # ════════════════════════════════════════════════════════════════
 def stop():
     section("🛑 Stopping Local Stack")
-    run("docker compose down", check=False)
+    run(f"podman-compose -f {PROJECT_DIR}/docker-compose.local.yml down", check=False)
     if IS_WINDOWS:
         run("taskkill /f /im python.exe", check=False)
     else:
